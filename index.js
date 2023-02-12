@@ -1,47 +1,106 @@
-const fs = require('node:fs');
-const path = require('node:path');
+require('dotenv').config();
 
-const { Client, Collection, GatewayIntentBits } = require('discord.js');
+const APPLICATION_ID = process.env.APPLICATION_ID;
+const TOKEN = process.env.TOKEN;
+const PUBLIC_KEY = process.env.PUBLIC_KEY;
+const GUILD_ID = process.env.GUILD_ID;
 
-const { token } = require('./config.json');
+const axios = require('axios');
+const express = require('express');
 
-const client = new Client({
-	intents:[
-		GatewayIntentBits.Guilds,
-	],
+const {
+  InteractionType,
+  InteractionResponseType,
+  verifyKeyMiddleware,
+} = require('discord-interactions');
+
+const app = express();
+
+const discord_api = axios.create({
+  baseURL: 'https://discord.com/api/',
+  timeout: 3000,
+  headers: {
+    'Access-Controll-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE',
+    'Access-Control-Allow-Headers': 'Authorization',
+    'Authorization': `Bot ${TOKEN}`,
+  },
 });
 
-client.commands = new Collection();
+app.post('/interactions', verifyKeyMiddleware(PUBLIC_KEY), async (req, res) => {
+  const interaction = req.body;
 
-// Commands
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+  if (interaction.type === InteractionType.APPLICATION_COMMAND) {
+    console.log(interaction.data.name);
 
-for (const file of commandFiles) {
-	const filePath = path.join(commandsPath, file);
-	const command = require(filePath);
-	// Set a new item in the Collection with the key as the command name and the value as the exported module
-	if ('data' in command && 'execute' in command) {
-		client.commands.set(command.data.name, command);
-	}
-	else {
-		console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
-	}
-}
+    if (interaction.data.name === 'yo') {
+      return res.send({
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: {
+          content: `Yo ${interaction.member.user.username}!`,
+        },
+      });
+    }
 
-// Events
-const eventsPath = path.join(__dirname, 'events');
-const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
+    if (interaction.data.name === 'dm') {
+      // https://discord.com/developers/docs/resources/user#create-dm
+      const c = (await discord_api.post('/users/@me/channels', {
+        recipient_id: interaction.member.user.id,
+      })).data;
 
-for (const file of eventFiles) {
-	const filePath = path.join(eventsPath, file);
-	const event = require(filePath);
-	if (event.once) {
-		client.once(event.name, (...args) => event.execute(...args));
-	}
-	else {
-		client.on(event.name, (...args) => event.execute(...args));
-	}
-}
+      try {
+        // https://discord.com/developers/docs/resources/channel#create-message
+        const discord_response = await discord_api.post(`/channels/${c.id}/messages`, {
+          content: 'Yo! I got your slash command. I am not able to respond to DMs just slash commands.',
+        });
 
-client.login(token);
+        console.log(discord_response.data);
+      }
+      catch (e) {
+        console.log(e);
+      }
+
+      return res.send({
+        // https://discord.com/developers/docs/interactions/receiving-and-responding#responding-to-an-interaction
+        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
+        data: {
+          content: '👍',
+        },
+      });
+    }
+  }
+});
+
+app.get('/register_commands', async (req, res) => {
+  const slash_commands = [
+    {
+      'name': 'yo',
+      'description': 'replies with Yo!',
+      'options': [],
+    },
+    {
+      'name': 'dm',
+      'description': 'sends user a DM',
+      'options': [],
+    },
+  ];
+
+  try {
+    // api docs - https://discord.com/developers/docs/interactions/application-commands#create-global-application-command
+    const discord_response = await discord_api.put(`/applications/${APPLICATION_ID}/guilds/${GUILD_ID}/commands`, slash_commands);
+
+    console.log(discord_response.data);
+
+    return res.send('command have been registered');
+  }
+  catch (e) {
+    console.error(e.code);
+    console.error(e.response?.data);
+
+    return res.send(`${e.code} error from discord`);
+  }
+});
+
+app.get('/', async (req, res) => {
+  return res.send('Follow documentation');
+});
