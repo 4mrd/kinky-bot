@@ -4,6 +4,7 @@ const APPLICATION_ID = process.env.APPLICATION_ID;
 const TOKEN = process.env.TOKEN;
 const PUBLIC_KEY = process.env.PUBLIC_KEY;
 const GUILD_ID = process.env.GUILD_ID;
+const PORT = process.env.PORT || 3000;
 
 const axios = require('axios');
 const express = require('express');
@@ -103,4 +104,8 @@ app.get('/register_commands', async (req, res) => {
 
 app.get('/', async (req, res) => {
   return res.send('Follow documentation');
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running at: http://0.0.0.0:${PORT}`);
 });
